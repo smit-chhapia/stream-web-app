@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Watch Together</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<style>
+  body{
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  button{
+    height: 100px;
+    width: 150px;
+  }
+</style>
+<body>
+  <h2>Local Network Synced Video Player</h2><br>
+  
+  <input type="file" id="videoUpload" accept="video/*"><br>
+  <br><br>
+  <video id="video" width="600" controls></video>
+  <br>
+  <div>
+    <button id="playBtn">Play</button>
+    <button id="pauseBtn">Pause</button>
+  </div>
+
+  <script>
+    const socket = io();
+    const video = document.getElementById('video');
+    const upload = document.getElementById('videoUpload');
+    let isSyncing = false; // prevent feedback loop
+
+    // Upload video
+    upload.addEventListener('change', () => {
+      const file = upload.files[0];
+      const formData = new FormData();
+      formData.append('video', file);
+
+      fetch('/upload', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+          video.src = data.videoPath;
+          video.load();
+        });
+    });
+
+    // Play button
+    document.getElementById('playBtn').onclick = () => {
+      video.play();
+      socket.emit('play', video.currentTime);
+    };
+
+    // Pause button
+    document.getElementById('pauseBtn').onclick = () => {
+      video.pause();
+      socket.emit('pause', video.currentTime);
+    };
+
+    // Seeking
+    video.addEventListener('seeking', () => {
+      if (!isSyncing) socket.emit('seek', video.currentTime);
+    });
+
+    // Socket sync events
+    socket.on('play', (time) => {
+      isSyncing = true;
+      video.currentTime = time;
+      video.play();
+      setTimeout(() => isSyncing = false, 100);
+    });
+
+    socket.on('pause', (time) => {
+      isSyncing = true;
+      video.currentTime = time;
+      video.pause();
+      setTimeout(() => isSyncing = false, 100);
+    });
+
+    socket.on('seek', (time) => {
+      isSyncing = true;
+      video.currentTime = time;
+      setTimeout(() => isSyncing = false, 100);
+    });
+
+    // Handle new video or initial sync
+    socket.on('newVideo', ({ videoPath, time, playing }) => {
+      isSyncing = true;
+      video.src = videoPath;
+      video.load();
+      video.currentTime = time;
+      if (playing) video.play();
+      setTimeout(() => isSyncing = false, 100);
+    });
+  </script>
+</body>
+</html>
